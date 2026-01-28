@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Funding Arbitrage Rechner</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#05060a; color:#f5f5f5; padding:20px; }
+    h1 { margin-bottom: 0.2rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #333; padding: 6px 8px; font-size: 0.9rem; }
+    input { width: 100%; box-sizing: border-box; background:#111; border:1px solid #444; color:#f5f5f5; padding:4px; }
+    button { margin-top: 1rem; padding: 8px 14px; background:#1e88e5; border:none; color:#fff; cursor:pointer; }
+    button:hover { background:#1565c0; }
+    .result { margin-top: 1.5rem; white-space: pre; font-family: monospace; }
+    .error { color:#ff6b6b; margin-top:0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Funding Arbitrage</h1>
+  <p>Trage deine Legs ein und berechne neutrales Funding‑Carry.</p>
+
+  <label>Funding‑Intervall (Stunden):
+    <input id="interval" type="number" value="8" step="0.1">
+  </label>
+
+  <table id="legs-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Position (long/short)</th>
+        <th>Funding‑Rate (z.B. 0.0171)</th>
+        <th>Notional (USD)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="legs-body">
+      <tr>
+        <td><input value="Spot"></td>
+        <td><input value="long"></td>
+        <td><input value="0.0"></td>
+        <td><input value="10000"></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><input value="Perp"></td>
+        <td><input value="short"></td>
+        <td><input value="0.0171"></td>
+        <td><input value="10000"></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <button id="add-leg">Leg hinzufügen</button>
+  <button id="calc">Arbitrage berechnen</button>
+
+  <div class="error" id="error"></div>
+  <div class="result" id="result"></div>
+
+  <script>
+    const legsBody = document.getElementById("legs-body");
+    document.getElementById("add-leg").onclick = () => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input></td>
+        <td><input></td>
+        <td><input></td>
+        <td><input></td>
+        <td><button class="remove">x</button></td>
+      `;
+      legsBody.appendChild(tr);
+      tr.querySelector(".remove").onclick = () => tr.remove();
+    };
+
+    document.getElementById("calc").onclick = async () => {
+      document.getElementById("error").textContent = "";
+      document.getElementById("result").textContent = "";
+
+      const interval = parseFloat(document.getElementById("interval").value || "8");
+      const legs = [];
+      for (const row of legsBody.querySelectorAll("tr")) {
+        const inputs = row.querySelectorAll("input");
+        if (!inputs[0].value) continue;
+        legs.push({
+          name: inputs[0].value,
+          position: inputs[1].value,
+          funding_rate: parseFloat(inputs[2].value || "0"),
+          notional: parseFloat(inputs[3].value || "0"),
+        });
+      }
+
+      try {
+        const res = await fetch("/arb", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ interval_hours: interval, legs }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          document.getElementById("error").textContent = data.error || "Fehler";
+          return;
+        }
+        document.getElementById("result").textContent =
+          `Neutral: ${data.neutral}\n` +
+          `Delta: ${data.delta.toFixed(2)}\n` +
+          `Long-Notional: ${data.long_notional.toFixed(2)}\n` +
+          `Short-Notional: ${data.short_notional.toFixed(2)}\n\n` +
+          `PnL/Intervall: ${data.pnl_per_interval.toFixed(2)}\n` +
+          `PnL/Tag:       ${data.pnl_per_day.toFixed(2)}\n` +
+          `PnL/Jahr:      ${data.pnl_per_year.toFixed(2)}`;
+      } catch (e) {
+        document.getElementById("error").textContent = String(e);
+      }
+    };
+  </script>
+</body>
+</html>
